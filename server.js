@@ -2,22 +2,52 @@ const express = require('express');
 const bcrypt = require('bcrypt-nodejs')
 const cors = require('cors')
 const knex = require('knex')
+const {ClarifaiStub, grpc} = require("clarifai-nodejs-grpc");
+
+const stub = ClarifaiStub.grpc();
+const metadata = new grpc.Metadata();
+metadata.set("authorization", "Key API_KEY");
 
 const app = express()
 const db = knex({
     client: 'pg',
     connection: {
-      host : '127.0.0.1',
+      host : 'DATABAASE ADDRESS',
       port : 5432,
-      user : 'postgres',
-      password : 'pass',
-      database : 'alienfacerecognition'
+      user : 'DATABASE USERNAME',
+      password : 'DATABASE PASSWORD',
+      database : 'DATABSE NAME'
     }
 })
 
 app.use(express.json())
 app.use(cors())
 
+function useClarifai(imageUrl) {
+    stub.PostModelOutputs(
+        {
+            model_id: "face-detection",
+            inputs: [{data: {image: {url: imageUrl}}}]
+        },
+        metadata,
+        (err, response) => {
+            if (err) {
+                console.log("Error: " + err);
+                return;
+            }
+    
+            if (response.status.code !== 10000) {
+                console.log("Received failed status: " + response.status.description + "\n" + response.status.details);
+                return;
+            }
+    
+            console.log("Predicted concepts, with confidence values:")
+            // console.log(response.outputs[0].data.regions[0].region_info.bounding_box)
+            return response.outputs[0].data.regions[0].region_info.bounding_box
+        }
+    );
+}
+ 
 app.get('/', (req, res) => {
     
 })
@@ -105,13 +135,38 @@ app.get('/profile/:id', (req, res) => {
 })
 
 app.put('/image', (req, res) => {
-    const { id } = req.body
-    db('users').where('id', '=', id)
-        .increment('entries')
-        .returning('entries')
-        .then(ent => res.json(ent[0].entries))
-        .catch(err => res.json(err))
+    const { id, imageUrl } = req.body
+    console.log(req.body)
+    
+    stub.PostModelOutputs(
+        {
+            model_id: "face-detection",
+            inputs: [{data: {image: {url: imageUrl}}}]
+        },
+        metadata,
+        (err, response) => {
+            if (err) {
+                console.log("Error: " + err);
+                return;
+            }
+    
+            if (response.status.code !== 10000) {
+                console.log("Received failed status: " + response.status.description + "\n" + response.status.details);
+                return;
+            }
+    
+            console.log("Predicted concepts, with confidence values:")
+            db('users').where('id', '=', id)
+                .increment('entries')
+                .returning('entries')
+                .then(ent => console.log(ent[0].entries))
+                .catch(err => console.log(err))
+            // console.log(response.outputs[0].data.regions[0].region_info.bounding_box)
+            res.json(response.outputs[0].data.regions[0].region_info.bounding_box)
+        }
+    );
 
+    console.log(imageUrl)
 })
 
 app.listen(3001, () => {
